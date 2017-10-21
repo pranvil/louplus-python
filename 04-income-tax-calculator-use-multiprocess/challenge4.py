@@ -1,190 +1,143 @@
-# -*- coding: utf-8 -*-
+#!/user/bin/env python3
 import sys
+import os
 import csv
-import queue
 from multiprocessing import Process, Queue
-from collections import namedtuple
-
-
-IncomeTaxQuickLookupItem = namedtuple(
-    'IncomeTaxQuickLookupItem',
-    ['start_point', 'tax_rate', 'quick_subtractor']
-)
-
-INCOME_TAX_START_POINT = 3500
-
-INCOME_TAX_QUICK_LOOKUP_TABLE = [
-    IncomeTaxQuickLookupItem(80000, 0.45, 13505),
-    IncomeTaxQuickLookupItem(55000, 0.35, 5505),
-    IncomeTaxQuickLookupItem(35000, 0.30, 2755),
-    IncomeTaxQuickLookupItem(9000, 0.25, 1005),
-    IncomeTaxQuickLookupItem(4500, 0.2, 555),
-    IncomeTaxQuickLookupItem(1500, 0.1, 105),
-    IncomeTaxQuickLookupItem(0, 0.03, 0)
-]
-
-q_user = Queue()
+q_userdata = Queue()
 q_result = Queue()
 
-
-class Args(object):
-
-    def __init__(self):
-        self.args = sys.argv[1:]
-
-    def _value_after_option(self, option):
+class config(Process);
+    def __init__(self,cfgfile):
+        self.config = {}
         try:
-            index = self.args.index(option)
-            return self.args[index + 1]
-        except (ValueError, IndexError):
-            print('Parameter Error')
-            exit()
+            with open(cfgfile,'r') as file:
+                for line in file:
+                    tmp = line.split('=')
+                    self.config[tmp[0].strip()] = float(tmp[1].strip())
+        except:
+            print('Config file parameter Error')
+            sys.exit(1)
+            
+    def get_config(self,key):
+        value = self.config[key]
+        return value
 
-    @property
-    def city(self):
-        return self._value_after_option('-C')
-
-    @property
-    def config_path(self):
-        return self._value_after_option('-c')
-
-    @property
-    def userdata_path(self):
-        return self._value_after_option('-d')
-
-    @property
-    def export_path(self):
-        return self._value_after_option('-o')
+    def get_total_rate(self):
+        rate_category=['YangLao','YiLiao','ShiYe','GongShang','ShengYu','GongJiJin']
+        rate = 0
+        for i in rate_category:
+            rate += self.get_config(i))          
+        return rate
 
 
-args = Args()
-
-
-class Config(object):
-
-    def __init__(self):
-        self.config = self._read_config()
-
-    def _read_config(self):
-        config_path = args.config_path
-        config = {}
-        with open(config_path) as f:
-            for line in f.readlines():
-                key, value = line.strip().split(' = ')
-                try:
-                    config[key] = float(value)
-                except ValueError:
-                    print('Parameter Error')
-                    exit()
-        return config
-
-    def _get_config(self, key):
+class userdata(object);
+    def __init__(self,userfile):
+        self.userdata = {}
         try:
-            return self.config[key]
-        except KeyError:
-            print('Config Error')
-            exit()
+            with open(userfile,'r') as file:
+                for line in file:
+                    tmp = line.split(',')
+                    self.userdata[tmp[0].strip()] = float(tmp[1].strip())
+        except:
+            print('userdata Parameter Error')
+            sys.exit(1)
+        q_userdata.put(self.userdata )
+    
 
-    @property
-    def social_insurance_baseline_low(self):
-        return self._get_config('JiShuL')
-
-    @property
-    def social_insurance_baseline_high(self):
-        return self._get_config('JiShuH')
-
-    @property
-    def social_insurance_total_rate(self):
-        return sum([
-            self._get_config('YangLao'),
-            self._get_config('YiLiao'),
-            self._get_config('ShiYe'),
-            self._get_config('GongShang'),
-            self._get_config('ShengYu'),
-            self._get_config('GongJiJin')
-        ])
+class calculate(Process);
+    def __init__(self,cfgfile):
+        self.JiShuL = config(cfgfile).get_config(JiShuL)
+        self.JiShuH = config(cfgfile).get_config(JiShuH)
+        self.rate = config(cfgfile).get_total_rate()
+        
+    def tax(self,salary,tax_rate,quick_deduction):
+        insurance = self.insurance(salary)
+        tax_part = salary - insurance - 3500
+        tax = tax_part * tax_rate - quick_deduction
+        return tax
 
 
-config = Config()
+    def insurance(self,salary):
+        if salary < self.JiShuL:
+            insurance_part = self.JiShuL
+        if salary > self.JiShuH:
+            insurance_part = self.JiShuH                
+        insurance = insurance_part*self.rate
+        return insurance
+
+    def result(self):
+        user_info=[]
+        userdata=q_userdata.get()
+        for key, salary in userdata:
+            insurance = self.insurance(salary)
+            a = salary - insurance -3500
+            if a <=0:
+                tax_rate = float(0)
+                quick_deduction = 0
+                tax = self.tax(salary,tax_rate,quick_deduction)
+            elif a <=1500:
+                tax_rate = float(0.03)
+                quick_deduction = 0
+                tax = self.tax(salary,tax_rate,quick_deduction)            
+            elif a <=4500:
+                tax_rate = float(0.1)
+                quick_deduction = 105
+                tax = self.tax(salary,tax_rate,quick_deduction)
+            if a <=9000:
+                tax_rate = float(0.2)
+                quick_deduction = 555
+                tax = self.tax(salary,tax_rate,quick_deduction)
+            if a <=35000:
+                tax_rate = float(0.25)
+                quick_deduction = 1005
+                tax = self.tax(salary,tax_rate,quick_deduction)
+            if a <=55000:
+                tax_rate = float(0.3)
+                quick_deduction = 2755
+                tax = self.tax(salary,tax_rate,quick_deduction)
+            if a <=80000:
+                tax_rate = float(0.35)
+                quick_deduction = 5505
+                tax = self.tax(salary,tax_rate,quick_deduction)
+            else:
+                tax_rate = float(0.45)
+                quick_deduction = 13505
+                tax = self.tax(salary,tax_rate,quick_deduction)            
+            #ID,salary,insurance,tax,income             
+            pure_income = salary - insurance - tax
+            tmp=[key,salary,insurance,tax,pure_income]
+            user_info.append(tmp)
+        q_result.put(user_info)        
 
 
-class UserData(Process):
-
-    def _read_users_data(self):
-        with open(args.userdata_path) as f:
-            for line in f.readlines():
-                employee_id, income_string = line.strip().split(',')
-                try:
-                    income = int(income_string)
-                except ValueError:
-                    print('Parameter Error')
-                    exit()
-                yield (employee_id, income)
-
-    def run(self):
-        for data in self._read_users_data():
-            q_user.put(data)
+class write_data(Process):
+    final_result = q_result.get()
+    with open(result,w) as file:
+        writer = csv.writer(file)
+        writer.writerows(final_result)
 
 
-class IncomeTaxCalculator(Process):
+if __name__ =='__main__':
+    args = sys.argv[1:]
+    try:
+        index_config = args.index('-d')+1
+        index_user = args.index('-c')+1
+        index_output = args.index('-o')+1
+    except:
+        print('Parameter incorrect')
+        sys.exit(1)
+    cfgfile = args[index_config]
+    userfile = args[index_user]
+    result = args[index_output]
+    t = [user,confile]
+    for i in t:
+        if os.path.exists(i):
+            pass
+        else:
+            print('file does not exist')
+            sys.exit(1)
 
-    @staticmethod
-    def calc_social_insurance_money(income):
-        if income < config.social_insurance_baseline_low:
-            return config.social_insurance_baseline_low * \
-                config.social_insurance_total_rate
-        if income > config.social_insurance_baseline_high:
-            return config.social_insurance_baseline_high * \
-                config.social_insurance_total_rate
-        return income * config.social_insurance_total_rate
-
-    @classmethod
-    def calc_income_tax_and_remain(cls, income):
-        social_insurance_money = cls.calc_social_insurance_money(income)
-        real_income = income - social_insurance_money
-        taxable_part = real_income - INCOME_TAX_START_POINT
-        if taxable_part <= 0:
-            return '0.00', '{:.2f}'.format(real_income)
-        for item in INCOME_TAX_QUICK_LOOKUP_TABLE:
-            if taxable_part > item.start_point:
-                tax = taxable_part * item.tax_rate - item.quick_subtractor
-                return '{:.2f}'.format(tax), '{:.2f}'.format(real_income - tax)
-
-    def calc_for_all_userdata(self):
-        while True:
-            try:
-                employee_id, income = q_user.get(timeout=1)
-            except queue.Empty:
-                return
-            data = [employee_id, income]
-            social_insurance_money = '{:.2f}'.format(self.calc_social_insurance_money(income))
-            tax, remain = self.calc_income_tax_and_remain(income)
-            data += [social_insurance_money, tax, remain]
-            yield data
-
-    def run(self):
-        for data in self.calc_for_all_userdata():
-            q_result.put(data)
-
-
-class Exporter(Process):
-
-    def run(self):
-        with open(args.export_path, 'w', newline='') as f:
-            while True:
-                writer = csv.writer(f)
-                try:
-                    item = q_result.get(timeout=1)
-                except queue.Empty:
-                    return
-                writer.writerow(item)
-
-
-if __name__ == '__main__':
-    workers = [
-        UserData(),
-        IncomeTaxCalculator(),
-        Exporter()
-    ]
-    for worker in workers:
-        worker.run()
+    userdata(userfile)
+    calculate(cfgfile).result()
+    write_data(result)
+    
